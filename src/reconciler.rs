@@ -115,9 +115,13 @@ pub async fn focus_topmost(ipc: &Ipc, original_output: Option<&str>) -> Result<(
                 .find(|ws| ws.is_focused)
                 .and_then(|ws| ws.output.as_deref())
         });
-    // Focus the original monitor last, leaving its topmost workspace selected too.
+    // Only visit other outputs that need a workspace change. Visiting one
+    // can steal keyboard focus, so restore the original output afterward.
     let last = restore.and_then(|output| topmost.remove(output));
-    for ws in topmost.into_values().chain(last) {
+    let mut changes = topmost.into_values().filter(|ws| !ws.is_active).peekable();
+    let visited_other_output = changes.peek().is_some();
+    let last = last.filter(|ws| visited_other_output || !ws.is_focused || !ws.is_active);
+    for ws in changes.chain(last) {
         ipc.action(Action::FocusWorkspace {
             reference: Id(ws.id),
         })
