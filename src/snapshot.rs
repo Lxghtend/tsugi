@@ -3,7 +3,52 @@ use crate::{
     ipc::Ipc,
 };
 use anyhow::{Context, Result, ensure};
-use std::{collections::BTreeMap, fs, io::Write, os::unix::fs::OpenOptionsExt};
+use std::{
+    collections::BTreeMap,
+    env, fs,
+    io::Write,
+    os::unix::fs::{OpenOptionsExt, PermissionsExt},
+    path::Path,
+};
+
+fn executable(path: &Path) -> bool {
+    fs::metadata(path).is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
+}
+
+fn on_path(program: &str) -> bool {
+    env::var_os("PATH").is_some_and(|path| {
+        env::split_paths(&path).any(|dir| dir.is_absolute() && executable(&dir.join(program)))
+    })
+}
+
+fn launch_command(
+    app: &str,
+    cmdline: Option<&str>,
+    cwd: Option<String>,
+    on_path: impl Fn(&str) -> bool,
+) -> Option<(Vec<String>, Option<String>)> {
+    // Vesktop's Electron process can rewrite argv and bypasses the packaged wrapper.
+    if app == "vesktop" && on_path("vesktop") {
+        return Some((vec!["vesktop".into()], None));
+    }
+
+    let raw = cmdline?;
+    let args: Vec<_> = raw.strip_suffix('\0').unwrap_or(raw).split('\0').collect();
+    let program = *args.first()?;
+    if program.is_empty() {
+        return None;
+    }
+    let path = Path::new(program);
+    let usable = if path.is_absolute() {
+        executable(path)
+    } else if program.contains('/') {
+        cwd.as_ref()
+            .is_some_and(|dir| executable(&Path::new(dir).join(path)))
+    } else {
+        on_path(program)
+    };
+    usable.then(|| (args.into_iter().map(str::to_owned).collect(), cwd))
+}
 
 pub async fn save(ipc: &Ipc, name: &str) -> Result<()> {
     let path = config::profile_path(name)?;
@@ -36,19 +81,14 @@ pub async fn save(ipc: &Ipc, name: &str) -> Result<()> {
             let command = fs::read(format!("{proc}/cmdline"))
                 .ok()
                 .and_then(|bytes| String::from_utf8(bytes).ok());
-            let Some(command) = command.filter(|s| !s.is_empty()) else {
-                tracing::warn!(id = w.id, "skipping window with unreadable command line");
-                continue;
-            };
-            let command = command
-                .strip_suffix('\0')
-                .unwrap_or(&command)
-                .split('\0')
-                .map(str::to_owned)
-                .collect();
             let cwd = fs::read_link(format!("{proc}/cwd"))
                 .ok()
+                .filter(|path| path.is_dir())
                 .and_then(|p| p.into_os_string().into_string().ok());
+            let Some((command, cwd)) = launch_command(app, command.as_deref(), cwd, on_path) else {
+                tracing::warn!(id = w.id, app_id = %app, "omitting window: no usable launch command; add it manually with the app's launcher");
+                continue;
+            };
             columns.entry(column).or_default().insert(
                 tile,
                 (
@@ -100,4 +140,36 @@ pub async fn save(ipc: &Ipc, name: &str) -> Result<()> {
         .write_all(text.as_bytes())?;
     println!("{}", path.display());
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::launch_command;
+
+    #[test]
+    fn rewritten_electron_argv_uses_vesktop_launcher() {
+        let raw = "/nix/store/example-electron/bin/electron --relaunch /nix/store/example-vesktop/app.asar\0";
+        assert_eq!(
+            launch_command(
+                "vesktop",
+                Some(raw),
+                Some("/nix/store/example".into()),
+                |p| p == "vesktop"
+            ),
+            Some((vec!["vesktop".into()], None)),
+        );
+        assert!(launch_command("vesktop", Some(raw), None, |_| false).is_none());
+    }
+
+    #[test]
+    fn preserves_spaces_and_empty_arguments() {
+        assert_eq!(
+            launch_command("editor", Some("editor\0file with spaces\0\0"), None, |p| p
+                == "editor"),
+            Some((
+                vec!["editor".into(), "file with spaces".into(), String::new()],
+                None
+            )),
+        );
+    }
 }
