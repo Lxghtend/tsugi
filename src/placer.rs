@@ -83,6 +83,22 @@ async fn focus(ipc: &Ipc, id: u64) -> Result<()> {
     Ok(())
 }
 
+fn column_matches(windows: &[niri_ipc::Window], workspace: u64, index: usize, ids: &[u64]) -> bool {
+    let positions = windows.iter().filter_map(|window| {
+        let (column, tile) = window.layout.pos_in_scrolling_layout?;
+        (window.workspace_id == Some(workspace) && !window.is_floating && column == index)
+            .then_some((tile, window.id))
+    });
+    let mut count = 0;
+    for (tile, id) in positions {
+        if tile.checked_sub(1).and_then(|offset| ids.get(offset)) != Some(&id) {
+            return false;
+        }
+        count += 1;
+    }
+    count == ids.len()
+}
+
 pub async fn place(
     ipc: &Ipc,
     workspace: u64,
@@ -90,10 +106,41 @@ pub async fn place(
     column: &Column,
     ids: &[u64],
 ) -> Result<()> {
+    let windows = ipc.windows().await?;
+    if !column_matches(&windows, workspace, index, ids) {
+        arrange(ipc, workspace, index, ids).await?;
+    }
+    focus(ipc, ids[0]).await?;
+    if let Some(tabbed) = column.tabbed {
+        ipc.action(Action::SetColumnDisplay {
+            display: if tabbed {
+                ColumnDisplay::Tabbed
+            } else {
+                ColumnDisplay::Normal
+            },
+        })
+        .await?;
+    }
+    ipc.action(Action::SetColumnWidth {
+        change: column.width.change()?,
+    })
+    .await
+}
+
+async fn arrange(ipc: &Ipc, workspace: u64, index: usize, ids: &[u64]) -> Result<()> {
     for (offset, &id) in ids.iter().enumerate() {
-        move_window(ipc, id, workspace).await?;
-        ipc.action(Action::MoveWindowToTiling { id: Some(id) })
-            .await?;
+        let windows = ipc.windows().await?;
+        let window = windows
+            .iter()
+            .find(|w| w.id == id)
+            .context("target window disappeared")?;
+        if window.workspace_id != Some(workspace) {
+            move_window(ipc, id, workspace).await?;
+        }
+        if window.is_floating {
+            ipc.action(Action::MoveWindowToTiling { id: Some(id) })
+                .await?;
+        }
         let windows = ipc.windows().await?;
         let window = windows
             .iter()
@@ -119,11 +166,20 @@ pub async fn place(
             ipc.action(Action::ConsumeOrExpelWindowRight { id: Some(id) })
                 .await?;
         }
-        focus(ipc, id).await?;
-        ipc.action(Action::MoveColumnToIndex {
-            index: index + usize::from(offset != 0),
-        })
-        .await?;
+        let destination = index + usize::from(offset != 0);
+        let current = ipc
+            .windows()
+            .await?
+            .into_iter()
+            .find(|w| w.id == id)
+            .and_then(|w| w.layout.pos_in_scrolling_layout)
+            .context("target window is not tiled")?
+            .0;
+        if current != destination {
+            focus(ipc, id).await?;
+            ipc.action(Action::MoveColumnToIndex { index: destination })
+                .await?;
+        }
         if offset != 0 {
             ipc.action(Action::ConsumeOrExpelWindowLeft { id: Some(id) })
                 .await?;
@@ -139,19 +195,47 @@ pub async fn place(
             "could not arrange workspace {workspace}, column {index}"
         );
     }
-    focus(ipc, ids[0]).await?;
-    if let Some(tabbed) = column.tabbed {
-        ipc.action(Action::SetColumnDisplay {
-            display: if tabbed {
-                ColumnDisplay::Tabbed
-            } else {
-                ColumnDisplay::Normal
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use niri_ipc::{Window, WindowLayout};
+
+    fn window(id: u64, workspace: u64, column: usize, tile: usize) -> Window {
+        Window {
+            id,
+            title: None,
+            app_id: None,
+            pid: None,
+            workspace_id: Some(workspace),
+            is_focused: false,
+            is_floating: false,
+            is_urgent: false,
+            focus_timestamp: None,
+            layout: WindowLayout {
+                pos_in_scrolling_layout: Some((column, tile)),
+                tile_size: (0.0, 0.0),
+                window_size: (0, 0),
+                tile_pos_in_workspace_view: None,
+                window_offset_in_tile: (0.0, 0.0),
             },
-        })
-        .await?;
+        }
     }
-    ipc.action(Action::SetColumnWidth {
-        change: column.width.change()?,
-    })
-    .await
+
+    #[test]
+    fn only_exact_column_layouts_skip_arrangement() {
+        let mut windows = vec![
+            window(2, 10, 1, 2),
+            window(1, 10, 1, 1),
+            window(3, 20, 1, 1),
+        ];
+        assert!(column_matches(&windows, 10, 1, &[1, 2]));
+        assert!(!column_matches(&windows, 10, 1, &[2, 1]));
+        assert!(!column_matches(&windows, 10, 1, &[1]));
+        assert!(!column_matches(&windows, 10, 2, &[1, 2]));
+        windows[0].is_floating = true;
+        assert!(!column_matches(&windows, 10, 1, &[1, 2]));
+    }
 }
