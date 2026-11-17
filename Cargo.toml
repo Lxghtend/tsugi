@@ -1,0 +1,45 @@
+[package]
+name = "tsugi"
+version = "0.1.0"
+edition = "2024"
+# `std::fs::File::lock` (used for the switch lock) was stabilised in 1.89.
+rust-version = "1.89"
+description = "次 — a fast, declarative context and session switcher for the niri compositor"
+# niri-ipc is GPL-3.0-or-later, so anything linking it has to be compatible.
+license = "GPL-3.0-or-later"
+repository = "https://github.com/Lxghtend/tsugi"
+keywords = ["niri", "wayland", "session", "workspace"]
+categories = ["command-line-utilities"]
+
+[dependencies]
+anyhow = "1"
+clap = { version = "4.5", features = ["derive", "env"] }
+libc = "0.2"
+# niri-ipc tracks the niri release (26.4.0 <-> niri 26.04) and is *not* semver
+# stable: fields and variants are added in patch releases. Pin it exactly and
+# bump it together with the niri version you run.
+niri-ipc = "=26.4.0"
+regex = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+tokio = { version = "1", features = [
+    "rt",
+    "macros",
+    "net",
+    "io-util",
+    "process",
+    "time",
+    "signal",
+] }
+toml = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", default-features = false, features = [
+    "fmt",
+    "ansi",
+] }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true

@@ -1,0 +1,12 @@
+name = "default"
+unmatched_policy = "ignore"
+
+[[workspaces]]
+name = "web"
+
+[[workspaces.columns]]
+width = "65%"
+
+[[workspaces.columns.windows]]
+app_id = "firefox"
+command = ["firefox"]

@@ -1,0 +1,12 @@
+name = "gaming"
+unmatched_policy = "stash"
+
+[[workspaces]]
+name = "games"
+
+[[workspaces.columns]]
+width = 1000
+
+[[workspaces.columns.windows]]
+app_id = "steam"
+command = ["steam"]

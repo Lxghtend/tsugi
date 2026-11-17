@@ -1,0 +1,25 @@
+name = "developing"
+unmatched_policy = "stash"
+
+[[workspaces]]
+name = "dev"
+
+[[workspaces.columns]]
+width = "65%"
+
+[[workspaces.columns.windows]]
+app_id = 'dev-editor'
+command = ["kitty", "--class", "dev-editor", "nvim"]
+cwd = "~"
+
+[[workspaces.columns]]
+width = "35%"
+tabbed = true
+
+[[workspaces.columns.windows]]
+app_id = "dev-shell"
+command = ["kitty", "--class", "dev-shell"]
+
+[[workspaces.columns.windows]]
+app_id = "dev-monitor"
+command = ["kitty", "--class", "dev-monitor", "top"]
