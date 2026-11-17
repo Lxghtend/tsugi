@@ -5,7 +5,7 @@ use crate::{
 };
 use anyhow::{Context, Result, ensure};
 use niri_ipc::{Action, Request, Response, WorkspaceReferenceArg::Id};
-use std::time::Duration;
+use std::{collections::BTreeMap, time::Duration};
 
 pub async fn switch(ipc: &Ipc, profile: &Profile, deadline: Duration) -> Result<()> {
     let workspaces = ipc.workspaces().await?;
@@ -91,9 +91,35 @@ pub async fn switch(ipc: &Ipc, profile: &Profile, deadline: Duration) -> Result<
             }
         }
     }
-    if let Some(first) = targets.first() {
+    Ok(())
+}
+
+pub async fn focus_topmost(ipc: &Ipc, original_output: Option<&str>) -> Result<()> {
+    // Re-query after placement: moving windows and workspaces can change indices.
+    let workspaces = ipc.workspaces().await?;
+    let mut topmost = BTreeMap::<&str, &niri_ipc::Workspace>::new();
+    for ws in &workspaces {
+        let Some(output) = ws.output.as_deref() else {
+            continue;
+        };
+        let first = topmost.entry(output).or_insert(ws);
+        if ws.idx < first.idx {
+            *first = ws;
+        }
+    }
+    let restore = original_output
+        .filter(|output| topmost.contains_key(output))
+        .or_else(|| {
+            workspaces
+                .iter()
+                .find(|ws| ws.is_focused)
+                .and_then(|ws| ws.output.as_deref())
+        });
+    // Focus the original monitor last, leaving its topmost workspace selected too.
+    let last = restore.and_then(|output| topmost.remove(output));
+    for ws in topmost.into_values().chain(last) {
         ipc.action(Action::FocusWorkspace {
-            reference: Id(first.id),
+            reference: Id(ws.id),
         })
         .await?;
     }

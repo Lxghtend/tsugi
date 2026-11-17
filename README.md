@@ -1,6 +1,6 @@
 # tsugi (次)
 
-Switch between declarative desktop profiles in Niri 26.04. `tsugi` reuses matching windows, starts missing apps, and arranges the resulting columns and stacks. Switching does not require a daemon.
+Switch between declarative desktop profiles in Niri 26.04. `tsugi` reuses matching windows, starts missing apps, and arranges the resulting columns and stacks. Switching does not require a daemon. After a successful switch, each monitor shows its topmost workspace in Niri’s current order, and keyboard focus returns to the monitor you started on if it’s still connected.
 
 ## Get started
 
