@@ -40,11 +40,33 @@ pub async fn switch(ipc: &Ipc, profile: &Profile, deadline: Duration) -> Result<
     }
     let mut leftovers = ipc.windows().await?;
     leftovers.sort_by_key(|w| w.id);
+    // Reserve exact matches first so a fallback cannot steal a later slot.
+    let mut exact = BTreeMap::new();
+    for (ws, target) in profile.workspaces.iter().zip(&targets) {
+        for (col, column) in ws.columns.iter().enumerate() {
+            for (tile, spec) in column.windows.iter().enumerate() {
+                let position = (col + 1, tile + 1);
+                let matcher = spec.matcher()?;
+                if let Some(index) = leftovers.iter().position(|w| {
+                    w.workspace_id == Some(target.id)
+                        && !w.is_floating
+                        && w.layout.pos_in_scrolling_layout == Some(position)
+                        && matcher.matches(w)
+                }) {
+                    exact.insert((target.id, position), leftovers.remove(index).id);
+                }
+            }
+        }
+    }
     let mut plan = Vec::new();
     for (ws, target) in profile.workspaces.iter().zip(&targets) {
         for (index, column) in ws.columns.iter().enumerate() {
             let mut ids = Vec::new();
-            for spec in &column.windows {
+            for (tile, spec) in column.windows.iter().enumerate() {
+                if let Some(id) = exact.remove(&(target.id, (index + 1, tile + 1))) {
+                    ids.push(id);
+                    continue;
+                }
                 let matcher = spec.matcher()?;
                 let found = leftovers
                     .iter()
