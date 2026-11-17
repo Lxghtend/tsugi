@@ -11,8 +11,12 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum Command {
-    Switch { profile: String },
-    Save { profile: String },
+    Switch {
+        profile: String,
+    },
+    Save {
+        profile: String,
+    },
     List,
     Status,
     Daemon,
