@@ -107,7 +107,17 @@ pub async fn place(
     ids: &[u64],
 ) -> Result<()> {
     let windows = ipc.windows().await?;
-    if !column_matches(&windows, workspace, index, ids) {
+    let change = column.width.change()?;
+    if column_matches(&windows, workspace, index, ids) {
+        // IPC exposes rendered tile sizes, not the configured column width or tab mode.
+        if column.tabbed.is_none()
+            && matches!(change, niri_ipc::SizeChange::SetFixed(px) if ids.iter().all(|id| {
+                windows.iter().any(|w| w.id == *id && (w.layout.tile_size.0 - f64::from(px)).abs() <= 0.5)
+            }))
+        {
+            return Ok(());
+        }
+    } else {
         arrange(ipc, workspace, index, ids).await?;
     }
     focus(ipc, ids[0]).await?;
@@ -121,10 +131,7 @@ pub async fn place(
         })
         .await?;
     }
-    ipc.action(Action::SetColumnWidth {
-        change: column.width.change()?,
-    })
-    .await
+    ipc.action(Action::SetColumnWidth { change }).await
 }
 
 async fn arrange(ipc: &Ipc, workspace: u64, index: usize, ids: &[u64]) -> Result<()> {
