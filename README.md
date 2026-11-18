@@ -63,7 +63,7 @@ default = true
 "HDMI-A-1" = false
 ```
 
-Here `DP-1` goes to its topmost workspace after a switch, but the final focus step leaves the active workspace on `HDMI-A-1` unchanged. Placement can still change which workspace is active during the switch. Unlisted outputs use `default`, which is `true` if omitted. Set it to `false` to opt in only on selected monitors. Keep top-level keys like `always_stash` above these tables.
+Here `DP-1` goes to its topmost workspace after a switch, while `HDMI-A-1` returns to the workspace that was active before the switch, if it still exists on that monitor. Unlisted outputs use `default`, which is `true` if omitted. Set it to `false` to opt in only on selected monitors. Keep top-level keys like `always_stash` above these tables.
 
 ## Home Manager
 

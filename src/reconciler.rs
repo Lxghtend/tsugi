@@ -138,15 +138,30 @@ pub async fn switch(
     Ok(())
 }
 
-pub async fn focus_topmost(
+pub async fn restore_workspace_focus(
     ipc: &Ipc,
-    original_output: Option<&str>,
+    original: &[niri_ipc::Workspace],
     settings: &FocusTopmost,
 ) -> Result<()> {
-    // Re-query after placement: moving windows and workspaces can change indices.
     let workspaces = ipc.workspaces().await?;
+    for id in workspace_focus_order(original, &workspaces, settings) {
+        ipc.action(Action::FocusWorkspace { reference: Id(id) })
+            .await?;
+    }
+    Ok(())
+}
+
+fn workspace_focus_order(
+    original: &[niri_ipc::Workspace],
+    workspaces: &[niri_ipc::Workspace],
+    settings: &FocusTopmost,
+) -> Vec<u64> {
+    let original_output = original
+        .iter()
+        .find(|ws| ws.is_focused)
+        .and_then(|ws| ws.output.as_deref());
     let mut topmost = BTreeMap::<&str, &niri_ipc::Workspace>::new();
-    for ws in &workspaces {
+    for ws in workspaces {
         let Some(output) = ws.output.as_deref() else {
             continue;
         };
@@ -165,28 +180,80 @@ pub async fn focus_topmost(
         });
     // Only visit other outputs that need a workspace change. Visiting one
     // can steal keyboard focus, so restore the original output afterward.
-    let last = restore.and_then(|output| {
-        let first = topmost.remove(output);
+    let destination = |output: &str, first| {
         if settings.enabled(output) {
-            first
-        } else {
-            workspaces
-                .iter()
-                .find(|ws| ws.output.as_deref() == Some(output) && ws.is_active)
+            return Some(first);
         }
+        let previous = original
+            .iter()
+            .find(|ws| ws.output.as_deref() == Some(output) && ws.is_active);
+        // A dynamic workspace might disappear or move to another output during placement.
+        previous
+            .and_then(|prev| {
+                workspaces
+                    .iter()
+                    .find(|ws| ws.id == prev.id && ws.output.as_deref() == Some(output))
+            })
+            .or_else(|| {
+                workspaces
+                    .iter()
+                    .find(|ws| ws.output.as_deref() == Some(output) && ws.is_active)
+            })
+    };
+    let last = restore.and_then(|output| {
+        topmost
+            .remove(output)
+            .and_then(|first| destination(output, first))
     });
     let mut changes = topmost
         .into_iter()
-        .filter(|(output, ws)| settings.enabled(output) && !ws.is_active)
-        .map(|(_, ws)| ws)
-        .peekable();
-    let visited_other_output = changes.peek().is_some();
-    let last = last.filter(|ws| visited_other_output || !ws.is_focused || !ws.is_active);
-    for ws in changes.chain(last) {
-        ipc.action(Action::FocusWorkspace {
-            reference: Id(ws.id),
-        })
-        .await?;
+        .filter_map(|(output, first)| destination(output, first))
+        .filter(|ws| !ws.is_active)
+        .map(|ws| ws.id)
+        .collect::<Vec<_>>();
+    if let Some(ws) = last.filter(|ws| !changes.is_empty() || !ws.is_focused || !ws.is_active) {
+        changes.push(ws.id);
     }
-    Ok(())
+    changes
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use niri_ipc::Workspace;
+
+    fn workspace(id: u64, idx: u8, output: &str, active: bool, focused: bool) -> Workspace {
+        Workspace {
+            id,
+            idx,
+            name: None,
+            output: Some(output.into()),
+            is_urgent: false,
+            is_active: active,
+            is_focused: focused,
+            active_window_id: None,
+        }
+    }
+
+    #[test]
+    fn restores_previous_workspace_on_output_with_topmost_disabled() {
+        let settings = FocusTopmost {
+            outputs: [("HDMI-A-1".into(), false)].into(),
+            ..FocusTopmost::default()
+        };
+        let original = [
+            workspace(12, 2, "HDMI-A-1", true, false),
+            workspace(21, 1, "DP-1", true, true),
+        ];
+        let after = [
+            workspace(11, 1, "HDMI-A-1", false, false),
+            workspace(12, 2, "HDMI-A-1", false, false),
+            workspace(13, 3, "HDMI-A-1", true, true),
+            workspace(21, 1, "DP-1", true, false),
+        ];
+        assert_eq!(
+            workspace_focus_order(&original, &after, &settings),
+            [12, 21]
+        );
+    }
 }

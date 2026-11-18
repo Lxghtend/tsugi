@@ -97,12 +97,7 @@ async fn switch(name: &str, timeout: u64) -> Result<()> {
     lock.try_lock()
         .context("could not acquire switch lock; another switch may be running")?;
     let settings = config::Settings::load()?;
-    let original_output = ipc
-        .workspaces()
-        .await?
-        .into_iter()
-        .find(|ws| ws.is_focused)
-        .and_then(|ws| ws.output);
+    let original_workspaces = ipc.workspaces().await?;
     let old = active(&dir)?;
     let changed = old.as_deref() != Some(name);
     if changed {
@@ -117,7 +112,8 @@ async fn switch(name: &str, timeout: u64) -> Result<()> {
     if changed {
         hooks::run(&profile.on_enter, "on_enter", limit).await?;
     }
-    reconciler::focus_topmost(&ipc, original_output.as_deref(), &settings.focus_topmost).await?;
+    reconciler::restore_workspace_focus(&ipc, &original_workspaces, &settings.focus_topmost)
+        .await?;
     fs::write(dir.join("active.new"), name)?;
     fs::rename(dir.join("active.new"), dir.join("active"))?;
     Ok(())
