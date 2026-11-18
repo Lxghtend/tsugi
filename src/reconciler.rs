@@ -38,6 +38,18 @@ pub async fn switch(ipc: &Ipc, profile: &Profile, deadline: Duration) -> Result<
             }
         }
     }
+    // Placement needs normal window focus; overview can intercept it.
+    match ipc.request(Request::OverviewState).await? {
+        Response::OverviewState(state) if state.is_open => {
+            ipc.action(Action::CloseOverview {}).await?;
+            ensure!(
+                matches!(ipc.request(Request::OverviewState).await?, Response::OverviewState(state) if !state.is_open),
+                "Niri overview did not close; cannot arrange windows"
+            );
+        }
+        Response::OverviewState(_) => {}
+        _ => anyhow::bail!("expected Niri overview state"),
+    }
     let mut leftovers = ipc.windows().await?;
     leftovers.sort_by_key(|w| w.id);
     // Reserve exact matches first so a fallback cannot steal a later slot.
