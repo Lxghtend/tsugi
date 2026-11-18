@@ -27,8 +27,8 @@ fn stash() -> String {
 #[serde(rename_all = "lowercase")]
 pub enum Policy {
     Stash,
-    Close,
     #[default]
+    Close,
     Ignore,
 }
 
@@ -211,6 +211,12 @@ pub fn list() -> Result<Vec<String>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn omitted_policy_defaults_to_close() {
+        let profile: Profile = toml::from_str("name = 'demo'").unwrap();
+        assert_eq!(profile.unmatched_policy, Policy::Close);
+    }
+
     #[test]
     fn samples_round_trip() {
         for input in [
