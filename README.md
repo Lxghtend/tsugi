@@ -27,6 +27,7 @@ workspace "_stash"
 ./result/bin/tsugi --timeout 30 developing
 ./result/bin/tsugi status
 ./result/bin/tsugi save current
+./result/bin/tsugi save demo --ignore-focused-window
 ```
 
 Run inside the compositor session (`NIRI_SOCKET` and `XDG_RUNTIME_DIR` must be set for switching). `status` reports the last successful switch for this session, not a live layout comparison. `TSUGI_LOG=debug tsugi daemon` monitors Niri events in the foreground; it does not enforce a profile continuously.

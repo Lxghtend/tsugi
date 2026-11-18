@@ -33,7 +33,10 @@ async fn main() -> Result<()> {
         Command::Switch { profile } => switch(&profile, cli.timeout).await?,
         Command::Profile(args) if args.len() == 1 => switch(&args[0], cli.timeout).await?,
         Command::Profile(_) => bail!("expected a single profile name"),
-        Command::Save { profile } => snapshot::save(&Ipc::from_env()?, &profile).await?,
+        Command::Save {
+            profile,
+            ignore_focused_window,
+        } => snapshot::save(&Ipc::from_env()?, &profile, ignore_focused_window).await?,
         Command::Status => {
             let ipc = Ipc::from_env()?;
             println!(

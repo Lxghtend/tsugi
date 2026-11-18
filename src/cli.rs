@@ -16,6 +16,9 @@ pub enum Command {
     },
     Save {
         profile: String,
+        /// Omit the currently focused window from the snapshot.
+        #[arg(long)]
+        ignore_focused_window: bool,
     },
     List,
     Status,
