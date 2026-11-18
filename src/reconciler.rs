@@ -1,5 +1,5 @@
 use crate::{
-    config::{Policy, Profile, Settings},
+    config::{FocusTopmost, Policy, Profile, Settings},
     ipc::Ipc,
     placer,
 };
@@ -7,8 +7,12 @@ use anyhow::{Context, Result, ensure};
 use niri_ipc::{Action, Request, Response, WorkspaceReferenceArg::Id};
 use std::{collections::BTreeMap, time::Duration};
 
-pub async fn switch(ipc: &Ipc, profile: &Profile, deadline: Duration) -> Result<()> {
-    let settings = Settings::load()?;
+pub async fn switch(
+    ipc: &Ipc,
+    profile: &Profile,
+    settings: &Settings,
+    deadline: Duration,
+) -> Result<()> {
     let workspaces = ipc.workspaces().await?;
     let lookup = |name: &str| {
         workspaces
@@ -134,7 +138,11 @@ pub async fn switch(ipc: &Ipc, profile: &Profile, deadline: Duration) -> Result<
     Ok(())
 }
 
-pub async fn focus_topmost(ipc: &Ipc, original_output: Option<&str>) -> Result<()> {
+pub async fn focus_topmost(
+    ipc: &Ipc,
+    original_output: Option<&str>,
+    settings: &FocusTopmost,
+) -> Result<()> {
     // Re-query after placement: moving windows and workspaces can change indices.
     let workspaces = ipc.workspaces().await?;
     let mut topmost = BTreeMap::<&str, &niri_ipc::Workspace>::new();
@@ -157,8 +165,21 @@ pub async fn focus_topmost(ipc: &Ipc, original_output: Option<&str>) -> Result<(
         });
     // Only visit other outputs that need a workspace change. Visiting one
     // can steal keyboard focus, so restore the original output afterward.
-    let last = restore.and_then(|output| topmost.remove(output));
-    let mut changes = topmost.into_values().filter(|ws| !ws.is_active).peekable();
+    let last = restore.and_then(|output| {
+        let first = topmost.remove(output);
+        if settings.enabled(output) {
+            first
+        } else {
+            workspaces
+                .iter()
+                .find(|ws| ws.output.as_deref() == Some(output) && ws.is_active)
+        }
+    });
+    let mut changes = topmost
+        .into_iter()
+        .filter(|(output, ws)| settings.enabled(output) && !ws.is_active)
+        .map(|(_, ws)| ws)
+        .peekable();
     let visited_other_output = changes.peek().is_some();
     let last = last.filter(|ws| visited_other_output || !ws.is_focused || !ws.is_active);
     for ws in changes.chain(last) {

@@ -1,7 +1,11 @@
 use anyhow::{Context, Result, ensure};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
-use std::{collections::HashSet, env, fs, path::PathBuf};
+use std::{
+    collections::{HashMap, HashSet},
+    env, fs,
+    path::PathBuf,
+};
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -141,6 +145,29 @@ pub fn directory() -> Result<PathBuf> {
 #[serde(default, deny_unknown_fields)]
 pub struct Settings {
     pub always_stash: HashSet<String>,
+    pub focus_topmost: FocusTopmost,
+}
+
+#[derive(Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct FocusTopmost {
+    pub default: bool,
+    pub outputs: HashMap<String, bool>,
+}
+
+impl Default for FocusTopmost {
+    fn default() -> Self {
+        Self {
+            default: true,
+            outputs: HashMap::new(),
+        }
+    }
+}
+
+impl FocusTopmost {
+    pub fn enabled(&self, output: &str) -> bool {
+        self.outputs.get(output).copied().unwrap_or(self.default)
+    }
 }
 
 impl Settings {
@@ -263,6 +290,17 @@ mod tests {
                 .always_stash
                 .is_empty()
         );
+    }
+
+    #[test]
+    fn focus_topmost_supports_output_overrides() {
+        assert!(Settings::default().focus_topmost.enabled("DP-1"));
+        let settings: Settings = toml::from_str(
+            "[focus_topmost]\n default = false\n [focus_topmost.outputs]\n DP-1 = true",
+        )
+        .unwrap();
+        assert!(settings.focus_topmost.enabled("DP-1"));
+        assert!(!settings.focus_topmost.enabled("HDMI-A-1"));
     }
 
     #[test]

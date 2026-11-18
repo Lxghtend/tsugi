@@ -1,6 +1,6 @@
 # tsugi (次)
 
-Switch between declarative desktop profiles in Niri 26.04. `tsugi` reuses matching windows, starts missing apps, and arranges the resulting columns and stacks. Switching does not require a daemon. After a successful switch, each monitor shows its topmost workspace in Niri’s current order, and keyboard focus returns to the monitor you started on if it’s still connected.
+Switch between declarative desktop profiles in Niri 26.04. `tsugi` reuses matching windows, starts missing apps, and arranges the resulting columns and stacks. Switching does not require a daemon. By default, after a successful switch, each monitor shows its topmost workspace in Niri’s current order, and keyboard focus returns to the monitor you started on if it’s still connected.
 
 ## Get started
 
@@ -49,6 +49,21 @@ always_stash = ["vesktop", "org.example.App"]
 ```
 
 On each switch, the destination profile claims its windows first. Any leftover window whose app ID is in `always_stash` goes to the profile’s `stash_workspace` (default `_stash`), even when its unmatched policy is `close` or `ignore`. Listed apps are still reused or launched normally when the destination profile includes them. The stash workspace must exist in Niri and cannot also be a layout target.
+
+### Configure topmost workspace focus
+
+In `~/.config/tsugi/config.toml`, set the default and override it by Niri output name:
+
+```toml
+[focus_topmost]
+default = true
+
+[focus_topmost.outputs]
+"DP-1" = true
+"HDMI-A-1" = false
+```
+
+Here `DP-1` goes to its topmost workspace after a switch, but the final focus step leaves the active workspace on `HDMI-A-1` unchanged. Placement can still change which workspace is active during the switch. Unlisted outputs use `default`, which is `true` if omitted. Set it to `false` to opt in only on selected monitors. Keep top-level keys like `always_stash` above these tables.
 
 ## Home Manager
 
