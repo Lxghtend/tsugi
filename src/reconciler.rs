@@ -1,5 +1,5 @@
 use crate::{
-    config::{Policy, Profile},
+    config::{Policy, Profile, Settings},
     ipc::Ipc,
     placer,
 };
@@ -8,6 +8,7 @@ use niri_ipc::{Action, Request, Response, WorkspaceReferenceArg::Id};
 use std::{collections::BTreeMap, time::Duration};
 
 pub async fn switch(ipc: &Ipc, profile: &Profile, deadline: Duration) -> Result<()> {
+    let settings = Settings::load()?;
     let workspaces = ipc.workspaces().await?;
     let lookup = |name: &str| {
         workspaces
@@ -20,8 +21,13 @@ pub async fn switch(ipc: &Ipc, profile: &Profile, deadline: Duration) -> Result<
         .iter()
         .map(|ws| lookup(&ws.name))
         .collect::<Result<Vec<_>>>()?;
-    let stash = if profile.unmatched_policy == Policy::Stash {
-        Some(lookup(&profile.stash_workspace)?.id)
+    let stash = if profile.unmatched_policy == Policy::Stash || !settings.always_stash.is_empty() {
+        let id = lookup(&profile.stash_workspace)?.id;
+        ensure!(
+            !targets.iter().any(|ws| ws.id == id),
+            "stash workspace cannot also be a target"
+        );
+        Some(id)
     } else {
         None
     };
@@ -109,7 +115,7 @@ pub async fn switch(ipc: &Ipc, profile: &Profile, deadline: Duration) -> Result<
         placer::place(ipc, workspace, index, column, &ids).await?;
     }
     for window in leftovers {
-        match profile.unmatched_policy {
+        match settings.unmatched_policy(profile.unmatched_policy, window.app_id.as_deref()) {
             Policy::Ignore => {}
             Policy::Close => {
                 ipc.action(Action::CloseWindow {

@@ -125,12 +125,43 @@ pub fn home() -> Result<PathBuf> {
     Ok(env::var_os("HOME").context("HOME is unset")?.into())
 }
 
-pub fn directory() -> Result<PathBuf> {
+fn config_root() -> Result<PathBuf> {
     Ok(env::var_os("XDG_CONFIG_HOME")
         .map(PathBuf::from)
         .filter(|p| p.is_absolute())
         .unwrap_or(home()?.join(".config"))
-        .join("tsugi/profiles"))
+        .join("tsugi"))
+}
+
+pub fn directory() -> Result<PathBuf> {
+    Ok(config_root()?.join("profiles"))
+}
+
+#[derive(Default, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct Settings {
+    pub always_stash: HashSet<String>,
+}
+
+impl Settings {
+    pub fn load() -> Result<Self> {
+        let path = config_root()?.join("config.toml");
+        match fs::read_to_string(&path) {
+            Ok(text) => {
+                toml::from_str(&text).with_context(|| format!("parsing {}", path.display()))
+            }
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(Self::default()),
+            Err(err) => Err(err).with_context(|| format!("reading {}", path.display())),
+        }
+    }
+
+    pub fn unmatched_policy(&self, fallback: Policy, app_id: Option<&str>) -> Policy {
+        if app_id.is_some_and(|id| self.always_stash.contains(id)) {
+            Policy::Stash
+        } else {
+            fallback
+        }
+    }
 }
 
 pub fn profile_path(name: &str) -> Result<PathBuf> {
@@ -211,6 +242,29 @@ pub fn list() -> Result<Vec<String>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn always_stash_uses_literal_app_ids() {
+        let settings: Settings = toml::from_str("always_stash = ['org.example.App']").unwrap();
+        assert_eq!(
+            settings.unmatched_policy(Policy::Close, Some("org.example.App")),
+            Policy::Stash
+        );
+        assert_eq!(
+            settings.unmatched_policy(Policy::Ignore, Some("org.example.App")),
+            Policy::Stash
+        );
+        assert_eq!(
+            settings.unmatched_policy(Policy::Close, Some("orgXexampleXApp")),
+            Policy::Close
+        );
+        assert!(
+            toml::from_str::<Settings>("")
+                .unwrap()
+                .always_stash
+                .is_empty()
+        );
+    }
+
     #[test]
     fn omitted_policy_defaults_to_close() {
         let profile: Profile = toml::from_str("name = 'demo'").unwrap();

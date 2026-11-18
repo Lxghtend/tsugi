@@ -40,6 +40,16 @@ If `unmatched_policy` is omitted, it defaults to `close`: tsugi asks Niri to clo
 
 `save` only snapshots tiled windows on named workspaces, excluding `_stash`. Niri exposes tile geometry but not configured width proportions or tab display mode, so saved widths are approximate pixels and tab mode is omitted. Review saved commands before replaying or sharing them: `/proc` command lines can contain private arguments, and some apps need a launcher instead of the raw executable invocation. Vesktop uses its launcher when available on PATH. Other windows without a resolvable captured executable are skipped with a warning. Snapshots never overwrite an existing profile.
 
+### Stash specific apps when unmatched
+
+In `~/.config/tsugi/config.toml` (or under `$XDG_CONFIG_HOME`), list literal Niri app IDs:
+
+```toml
+always_stash = ["vesktop", "org.example.App"]
+```
+
+On each switch, the destination profile claims its windows first. Any leftover window whose app ID is in `always_stash` goes to the profile’s `stash_workspace` (default `_stash`), even when its unmatched policy is `close` or `ignore`. Listed apps are still reused or launched normally when the destination profile includes them. The stash workspace must exist in Niri and cannot also be a layout target.
+
 ## Home Manager
 
 Import `inputs.tsugi.homeManagerModules.default` and set:
