@@ -42,7 +42,7 @@ async fn main() -> Result<()> {
                 &Ipc::from_env()?,
                 &profile,
                 ignore_focused_window,
-                unmatched.unwrap_or(config::Policy::Ignore),
+                config::Settings::load()?.save_unmatched_policy(unmatched),
             )
             .await?
         }

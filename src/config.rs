@@ -147,6 +147,7 @@ pub fn directory() -> Result<PathBuf> {
 pub struct Settings {
     pub always_stash: HashSet<String>,
     pub focus_topmost: FocusTopmost,
+    pub default_save_unmatched: Option<Policy>,
 }
 
 #[derive(Deserialize)]
@@ -172,6 +173,11 @@ impl FocusTopmost {
 }
 
 impl Settings {
+    pub fn save_unmatched_policy(&self, explicit: Option<Policy>) -> Policy {
+        explicit
+            .or(self.default_save_unmatched)
+            .unwrap_or(Policy::Ignore)
+    }
     pub fn load() -> Result<Self> {
         let path = config_root()?.join("config.toml");
         match fs::read_to_string(&path) {
@@ -302,6 +308,20 @@ mod tests {
         .unwrap();
         assert!(settings.focus_topmost.enabled("DP-1"));
         assert!(!settings.focus_topmost.enabled("HDMI-A-1"));
+    }
+
+    #[test]
+    fn save_policy_flag_overrides_global_default() {
+        let settings: Settings = toml::from_str("default_save_unmatched = 'stash'").unwrap();
+        assert_eq!(settings.save_unmatched_policy(None), Policy::Stash);
+        assert_eq!(
+            settings.save_unmatched_policy(Some(Policy::Close)),
+            Policy::Close
+        );
+        assert_eq!(
+            Settings::default().save_unmatched_policy(None),
+            Policy::Ignore
+        );
     }
 
     #[test]

@@ -66,6 +66,16 @@ default = true
 
 Here `DP-1` goes to its topmost workspace after a switch, while `HDMI-A-1` returns to the workspace that was active before the switch, if it still exists on that monitor. Unlisted outputs use `default`, which is `true` if omitted. Set it to `false` to opt in only on selected monitors. Keep top-level keys like `always_stash` above these tables.
 
+### Default policy for saved profiles
+
+`tsugi save demo --unmatched close` writes `close` into the saved profile. The flag also accepts `stash` and `ignore`. To set the default for saves without the flag, add this top-level key to `~/.config/tsugi/config.toml` above any tables:
+
+```toml
+default_save_unmatched = "stash"
+```
+
+The flag overrides this setting. If neither is set, `save` writes `ignore` as before. This does not change the `close` fallback when switching to a hand-written profile that omits `unmatched_policy`.
+
 ## Home Manager
 
 Import `inputs.tsugi.homeManagerModules.default` and set:
