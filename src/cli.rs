@@ -19,6 +19,9 @@ pub enum Command {
         /// Omit the currently focused window from the snapshot.
         #[arg(long)]
         ignore_focused_window: bool,
+        /// Set the unmatched-window policy in the saved profile.
+        #[arg(long, value_enum)]
+        unmatched: Option<crate::config::Policy>,
     },
     List,
     Status,

@@ -29,6 +29,7 @@ fn stash() -> String {
 
 #[derive(Debug, Default, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
+#[derive(clap::ValueEnum)]
 pub enum Policy {
     Stash,
     #[default]

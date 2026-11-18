@@ -50,7 +50,12 @@ fn launch_command(
     usable.then(|| (args.into_iter().map(str::to_owned).collect(), cwd))
 }
 
-pub async fn save(ipc: &Ipc, name: &str, ignore_focused_window: bool) -> Result<()> {
+pub async fn save(
+    ipc: &Ipc,
+    name: &str,
+    ignore_focused_window: bool,
+    unmatched_policy: Policy,
+) -> Result<()> {
     let path = config::profile_path(name)?;
     let mut windows = ipc.windows().await?;
     if ignore_focused_window {
@@ -58,7 +63,7 @@ pub async fn save(ipc: &Ipc, name: &str, ignore_focused_window: bool) -> Result<
     }
     let mut profile = Profile {
         name: name.into(),
-        unmatched_policy: Policy::Ignore,
+        unmatched_policy,
         stash_workspace: "_stash".into(),
         on_enter: vec![],
         on_exit: vec![],

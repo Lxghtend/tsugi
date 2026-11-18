@@ -36,7 +36,16 @@ async fn main() -> Result<()> {
         Command::Save {
             profile,
             ignore_focused_window,
-        } => snapshot::save(&Ipc::from_env()?, &profile, ignore_focused_window).await?,
+            unmatched,
+        } => {
+            snapshot::save(
+                &Ipc::from_env()?,
+                &profile,
+                ignore_focused_window,
+                unmatched.unwrap_or(config::Policy::Ignore),
+            )
+            .await?
+        }
         Command::Status => {
             let ipc = Ipc::from_env()?;
             println!(
