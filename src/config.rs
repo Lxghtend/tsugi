@@ -190,7 +190,7 @@ impl Settings {
     }
 
     pub fn unmatched_policy(&self, fallback: Policy, app_id: Option<&str>) -> Policy {
-        if app_id.is_some_and(|id| self.always_stash.contains(id)) {
+        if fallback == Policy::Close && app_id.is_some_and(|id| self.always_stash.contains(id)) {
             Policy::Stash
         } else {
             fallback
@@ -285,7 +285,7 @@ mod tests {
         );
         assert_eq!(
             settings.unmatched_policy(Policy::Ignore, Some("org.example.App")),
-            Policy::Stash
+            Policy::Ignore
         );
         assert_eq!(
             settings.unmatched_policy(Policy::Close, Some("orgXexampleXApp")),

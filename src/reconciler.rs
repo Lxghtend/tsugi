@@ -25,7 +25,9 @@ pub async fn switch(
         .iter()
         .map(|ws| lookup(&ws.name))
         .collect::<Result<Vec<_>>>()?;
-    let stash = if profile.unmatched_policy == Policy::Stash || !settings.always_stash.is_empty() {
+    let stash = if profile.unmatched_policy == Policy::Stash
+        || (profile.unmatched_policy == Policy::Close && !settings.always_stash.is_empty())
+    {
         let id = lookup(&profile.stash_workspace)?.id;
         ensure!(
             !targets.iter().any(|ws| ws.id == id),

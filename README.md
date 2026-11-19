@@ -49,7 +49,7 @@ In `~/.config/tsugi/config.toml` (or under `$XDG_CONFIG_HOME`), list literal Nir
 always_stash = ["vesktop", "org.example.App"]
 ```
 
-On each switch, the destination profile claims its windows first. Any leftover window whose app ID is in `always_stash` goes to the profile’s `stash_workspace` (default `_stash`), even when its unmatched policy is `close` or `ignore`. Listed apps are still reused or launched normally when the destination profile includes them. The stash workspace must exist in Niri and cannot also be a layout target.
+On each switch, the destination profile claims its windows first. With `close`, leftover windows listed in `always_stash` are moved to the profile’s `stash_workspace` (default `_stash`) instead of being closed. With `ignore`, they stay where they are; with `stash`, all leftover windows are stashed as usual. Listed apps are still reused or launched normally when the destination profile includes them. When stashing is enabled, the stash workspace must exist in Niri and cannot also be a layout target.
 
 ### Configure topmost workspace focus
 
