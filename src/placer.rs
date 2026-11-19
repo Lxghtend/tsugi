@@ -7,7 +7,14 @@ use niri_ipc::{Action, ColumnDisplay, Event, WorkspaceReferenceArg::Id};
 use std::{collections::HashSet, os::unix::process::CommandExt, process::Stdio, time::Duration};
 use tokio::{process::Command, time::timeout};
 
-pub async fn spawn(ipc: &Ipc, spec: &Window, matcher: &Matcher, deadline: Duration) -> Result<u64> {
+pub async fn spawn_missing(
+    ipc: &Ipc,
+    tickets: &[(&Window, Matcher)],
+    deadline: Duration,
+) -> Result<Vec<u64>> {
+    if tickets.is_empty() {
+        return Ok(Vec::new());
+    }
     let mut events = ipc.events().await?;
     // Consume the subscription baseline before launching, so initial windows
     // and later title changes on those windows cannot satisfy this ticket.
@@ -21,6 +28,69 @@ pub async fn spawn(ipc: &Ipc, spec: &Window, matcher: &Matcher, deadline: Durati
     .await
     .context("waiting for initial Niri window list")??;
     existing.extend(ipc.windows().await?.into_iter().map(|w| w.id));
+    let pids = tickets
+        .iter()
+        .map(|(spec, _)| launch(spec))
+        .collect::<Result<Vec<_>>>()?;
+    let mut matched = vec![None; tickets.len()];
+    timeout(deadline, async {
+        while matched.contains(&None) {
+            match events.next().await? {
+                Event::WindowOpenedOrChanged { window } => {
+                    if let Some(slot) = spawn_slot(tickets, &pids, &existing, &matched, &window) {
+                        matched[slot] = Some(window.id);
+                    }
+                }
+                Event::WindowClosed { id } => {
+                    if let Some(slot) = matched.iter_mut().find(|slot| **slot == Some(id)) {
+                        *slot = None;
+                    }
+                }
+                _ => {}
+            }
+        }
+        Ok::<_, anyhow::Error>(())
+    })
+    .await
+    .with_context(|| {
+        let missing = tickets
+            .iter()
+            .zip(&matched)
+            .filter_map(|((spec, _), id)| id.is_none().then_some(spec.app_id.as_str()))
+            .collect::<Vec<_>>();
+        format!("timed out waiting for new windows: {}", missing.join(", "))
+    })??;
+    Ok(matched
+        .into_iter()
+        .map(|id| id.expect("all tickets matched"))
+        .collect())
+}
+
+fn spawn_slot(
+    tickets: &[(&Window, Matcher)],
+    pids: &[Option<i32>],
+    existing: &HashSet<u64>,
+    matched: &[Option<u64>],
+    window: &niri_ipc::Window,
+) -> Option<usize> {
+    if existing.contains(&window.id) || matched.contains(&Some(window.id)) {
+        return None;
+    }
+    tickets
+        .iter()
+        .enumerate()
+        .filter(|(slot, (_, matcher))| matched[*slot].is_none() && matcher.matches(window))
+        // Prefer the launching process when visible; wrappers and single-instance apps may report another PID.
+        .min_by_key(|(slot, (spec, _))| {
+            (
+                window.pid.is_none() || window.pid != pids[*slot],
+                spec.title_match.is_none(),
+            )
+        })
+        .map(|(slot, _)| slot)
+}
+
+fn launch(spec: &Window) -> Result<Option<i32>> {
     let mut command = Command::new(&spec.command[0]);
     command
         .args(&spec.command[1..])
@@ -49,20 +119,11 @@ pub async fn spawn(ipc: &Ipc, spec: &Window, matcher: &Matcher, deadline: Durati
     let mut child = command
         .spawn()
         .with_context(|| format!("launching {}", spec.command[0]))?;
+    let pid = child.id().and_then(|pid| i32::try_from(pid).ok());
     tokio::spawn(async move {
         let _ = child.wait().await;
     });
-    timeout(deadline, async {
-        loop {
-            if let Event::WindowOpenedOrChanged { window } = events.next().await? {
-                if !existing.contains(&window.id) && matcher.matches(&window) {
-                    return Ok(window.id);
-                }
-            }
-        }
-    })
-    .await
-    .with_context(|| format!("waiting for a new {} window", spec.app_id))?
+    Ok(pid)
 }
 
 pub async fn move_window(ipc: &Ipc, id: u64, workspace: u64) -> Result<()> {
@@ -229,6 +290,44 @@ mod tests {
                 window_offset_in_tile: (0.0, 0.0),
             },
         }
+    }
+
+    #[test]
+    fn concurrent_tickets_do_not_claim_the_same_window_twice() {
+        let spec = crate::config::Window {
+            app_id: "kitty".into(),
+            title_match: None,
+            command: vec!["kitty".into()],
+            cwd: None,
+        };
+        let tickets = [
+            (&spec, spec.matcher().unwrap()),
+            (&spec, spec.matcher().unwrap()),
+        ];
+        let pids = [Some(10), Some(20)];
+        let mut w = window(2, 1, 1, 1);
+        w.app_id = Some("kitty".into());
+        w.pid = Some(20);
+        let existing = HashSet::from([1]);
+        assert_eq!(
+            spawn_slot(&tickets, &pids, &existing, &[None, None], &w),
+            Some(1)
+        );
+        assert_eq!(
+            spawn_slot(&tickets, &pids, &existing, &[None, Some(2)], &w),
+            None
+        );
+        w.id = 1;
+        assert_eq!(
+            spawn_slot(&tickets, &pids, &existing, &[None, Some(2)], &w),
+            None
+        );
+        w.id = 3;
+        w.pid = None;
+        assert_eq!(
+            spawn_slot(&tickets, &pids, &existing, &[None, Some(2)], &w),
+            Some(0)
+        );
     }
 
     #[test]

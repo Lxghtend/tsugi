@@ -82,13 +82,18 @@ pub async fn switch(
             }
         }
     }
+    enum Slot {
+        Existing(u64),
+        Pending(usize),
+    }
+    let mut tickets = Vec::new();
     let mut plan = Vec::new();
     for (ws, target) in profile.workspaces.iter().zip(&targets) {
         for (index, column) in ws.columns.iter().enumerate() {
             let mut ids = Vec::new();
             for (tile, spec) in column.windows.iter().enumerate() {
                 if let Some(id) = exact.remove(&(target.id, (index + 1, tile + 1))) {
-                    ids.push(id);
+                    ids.push(Slot::Existing(id));
                     continue;
                 }
                 let matcher = spec.matcher()?;
@@ -99,8 +104,12 @@ pub async fn switch(
                     .min_by_key(|(_, w)| w.workspace_id != Some(target.id))
                     .map(|(index, _)| index);
                 ids.push(match found {
-                    Some(index) => leftovers.remove(index).id,
-                    None => placer::spawn(ipc, spec, &matcher, deadline).await?,
+                    Some(index) => Slot::Existing(leftovers.remove(index).id),
+                    None => {
+                        let slot = tickets.len();
+                        tickets.push((spec, matcher));
+                        Slot::Pending(slot)
+                    }
                 });
             }
             plan.push((target.id, index + 1, column, ids));
@@ -117,7 +126,15 @@ pub async fn switch(
             }
         }
     }
-    for (workspace, index, column, ids) in plan {
+    let spawned = placer::spawn_missing(ipc, &tickets, deadline).await?;
+    for (workspace, index, column, slots) in plan {
+        let ids = slots
+            .into_iter()
+            .map(|slot| match slot {
+                Slot::Existing(id) => id,
+                Slot::Pending(index) => spawned[index],
+            })
+            .collect::<Vec<_>>();
         placer::place(ipc, workspace, index, column, &ids).await?;
     }
     for window in leftovers {
