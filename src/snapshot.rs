@@ -3,13 +3,7 @@ use crate::{
     ipc::Ipc,
 };
 use anyhow::{Context, Result, ensure};
-use std::{
-    collections::BTreeMap,
-    env, fs,
-    io::Write,
-    os::unix::fs::{OpenOptionsExt, PermissionsExt},
-    path::Path,
-};
+use std::{collections::BTreeMap, env, fs, io::Write, os::unix::fs::PermissionsExt, path::Path};
 
 fn executable(path: &Path) -> bool {
     fs::metadata(path).is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
@@ -55,6 +49,7 @@ pub async fn save(
     name: &str,
     ignore_focused_window: bool,
     unmatched_policy: Policy,
+    overwrite: bool,
 ) -> Result<()> {
     let path = config::profile_path(name)?;
     let mut windows = ipc.windows().await?;
@@ -137,22 +132,60 @@ pub async fn save(
     );
     profile.validate()?;
     let text = toml::to_string_pretty(&profile)?;
-    fs::create_dir_all(config::directory()?)?;
-    // Command lines can contain private arguments; don't make snapshots world-readable.
-    fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .mode(0o600)
-        .open(&path)
-        .with_context(|| format!("creating {} (save does not overwrite)", path.display()))?
-        .write_all(text.as_bytes())?;
+    write_snapshot(&path, &text, overwrite)?;
     println!("{}", path.display());
+    Ok(())
+}
+
+fn write_snapshot(path: &Path, text: &str, overwrite: bool) -> Result<()> {
+    let parent = path.parent().context("snapshot path has no parent")?;
+    fs::create_dir_all(parent)?;
+    // Use a private temporary file on the destination filesystem for atomic publication.
+    let mut temp = tempfile::NamedTempFile::new_in(parent)?;
+    temp.write_all(text.as_bytes())?;
+    if overwrite {
+        match fs::symlink_metadata(path) {
+            Ok(meta) => ensure!(
+                meta.is_file(),
+                "refusing to overwrite a symlink or non-regular file: {}",
+                path.display()
+            ),
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+            Err(err) => return Err(err).with_context(|| format!("checking {}", path.display())),
+        }
+        temp.persist(path)
+            .with_context(|| format!("replacing {}", path.display()))?;
+    } else {
+        temp.persist_noclobber(path).with_context(|| {
+            format!(
+                "creating {} (use --overwrite to replace an existing profile)",
+                path.display()
+            )
+        })?;
+    }
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
-    use super::launch_command;
+    use super::{fs, launch_command, write_snapshot};
+
+    #[test]
+    fn overwrite_requires_opt_in_and_refuses_symlinks() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("profile.toml");
+        write_snapshot(&path, "first", false).unwrap();
+        assert!(write_snapshot(&path, "second", false).is_err());
+        assert_eq!(fs::read_to_string(&path).unwrap(), "first");
+        write_snapshot(&path, "second", true).unwrap();
+        assert_eq!(fs::read_to_string(&path).unwrap(), "second");
+
+        let link = dir.path().join("managed.toml");
+        std::os::unix::fs::symlink(&path, &link).unwrap();
+        assert!(write_snapshot(&link, "third", true).is_err());
+        assert!(fs::symlink_metadata(&link).unwrap().is_symlink());
+        assert_eq!(fs::read_to_string(&path).unwrap(), "second");
+    }
 
     #[test]
     fn rewritten_electron_argv_uses_vesktop_launcher() {

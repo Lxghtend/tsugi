@@ -37,12 +37,14 @@ async fn main() -> Result<()> {
             profile,
             ignore_focused_window,
             unmatched,
+            overwrite,
         } => {
             snapshot::save(
                 &Ipc::from_env()?,
                 &profile,
                 ignore_focused_window,
                 config::Settings::load()?.save_unmatched_policy(unmatched),
+                overwrite,
             )
             .await?
         }

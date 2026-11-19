@@ -22,6 +22,9 @@ pub enum Command {
         /// Set the unmatched-window policy in the saved profile.
         #[arg(long, value_enum)]
         unmatched: Option<crate::config::Policy>,
+        /// Replace an existing profile with a fresh snapshot.
+        #[arg(long)]
+        overwrite: bool,
     },
     List,
     Status,
