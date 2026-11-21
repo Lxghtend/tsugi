@@ -33,6 +33,14 @@ workspace "_stash"
 
 Run inside the compositor session (`NIRI_SOCKET` and `XDG_RUNTIME_DIR` must be set for switching). `status` reports the last successful switch for this session, not a live layout comparison. `TSUGI_LOG=debug tsugi daemon` monitors Niri events in the foreground; it does not enforce a profile continuously.
 
+## Profile picker
+
+Run `tsugi pick` to choose from your profiles with Fuzzel (install `fuzzel` separately). The active profile is marked and listed first. Press Enter to switch or Escape to cancel. To bind it in Niri, add this to your existing `binds` block:
+
+```kdl
+Mod+Shift+P { spawn "tsugi" "pick"; }
+```
+
 ## Profiles
 
 See [`profiles/developing.toml`](profiles/developing.toml) for a tabbed stack. Array order is left to right for columns and top to bottom for windows. Widths may be percentages or positive logical pixels. The optional workspace `output` must identify a connected output. `app_id` is a full-string regex (escape metacharacters for literal IDs); `title_match` is an optional regex search on the title. `command` is an argument vector, not a shell string. `cwd` supports `~` and `~/…`.

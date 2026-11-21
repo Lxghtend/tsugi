@@ -2,6 +2,7 @@ mod cli;
 mod config;
 mod hooks;
 mod ipc;
+mod picker;
 mod placer;
 mod reconciler;
 mod snapshot;
@@ -28,6 +29,13 @@ async fn main() -> Result<()> {
         Command::List => {
             for name in config::list()? {
                 println!("{name}");
+            }
+        }
+        Command::Pick => {
+            let ipc = Ipc::from_env()?;
+            let current = active(&state_dir(&ipc)?)?;
+            if let Some(profile) = picker::pick(config::list()?, current.as_deref()).await? {
+                switch(&profile, cli.timeout).await?;
             }
         }
         Command::Switch { profile } => switch(&profile, cli.timeout).await?,

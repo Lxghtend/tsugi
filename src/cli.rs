@@ -27,6 +27,8 @@ pub enum Command {
         overwrite: bool,
     },
     List,
+    /// Select a profile using Fuzzel.
+    Pick,
     Status,
     Daemon,
     #[command(external_subcommand)]
